@@ -15,7 +15,7 @@ HDR_MODEL_PATH = "hdr_cnn.keras"
 CRNN_MODEL_PATH = "crnn_svhn_sequence.keras"
 
 # --------------------------------------------------
-# CTC LOSS (ONLY FOR LOADING MODEL)
+# CTC LOSS (REQUIRED ONLY TO LOAD MODEL)
 # --------------------------------------------------
 def ctc_loss(args):
     y_pred, labels, input_length, label_length = args
@@ -30,27 +30,11 @@ def load_hdr_model():
 
 @st.cache_resource
 def load_crnn_model():
-    model = tf.keras.models.load_model(
+    return tf.keras.models.load_model(
         CRNN_MODEL_PATH,
         custom_objects={"ctc_loss": ctc_loss},
         compile=False
     )
-
-    # Extract last Dense (softmax) layer safely
-    softmax_output = None
-    for layer in model.layers:
-        if isinstance(layer, tf.keras.layers.Dense):
-            softmax_output = layer.output
-
-    if softmax_output is None:
-        raise RuntimeError("Dense softmax layer not found in CRNN model")
-
-    inference_model = tf.keras.models.Model(
-        inputs=model.input,
-        outputs=softmax_output
-    )
-
-    return inference_model
 
 hdr_model = load_hdr_model()
 crnn_model = load_crnn_model()
@@ -79,11 +63,32 @@ def preprocess_crnn(img):
     return img.reshape(1, 32, 128, 1)
 
 # --------------------------------------------------
+# CRNN PREDICTION (4-INPUT MODEL)
+# --------------------------------------------------
+def predict_crnn(model, image):
+    batch_size = image.shape[0]
+
+    # IMPORTANT: these sizes must match training
+    max_label_len = 5        # adjust ONLY if your model used a different value
+    time_steps = 32
+
+    dummy_labels = np.zeros((batch_size, max_label_len), dtype=np.int32)
+    dummy_input_length = np.ones((batch_size, 1), dtype=np.int32) * time_steps
+    dummy_label_length = np.ones((batch_size, 1), dtype=np.int32)
+
+    y_pred = model.predict(
+        [image, dummy_labels, dummy_input_length, dummy_label_length],
+        verbose=0
+    )
+
+    return y_pred
+
+# --------------------------------------------------
 # CTC GREEDY DECODER
 # --------------------------------------------------
 def decode_crnn(pred):
     pred = np.argmax(pred, axis=-1)
-    result = []
+    results = []
 
     for seq in pred:
         prev = -1
@@ -92,9 +97,9 @@ def decode_crnn(pred):
             if p != prev and p != -1 and p < 10:
                 chars.append(str(p))
             prev = p
-        result.append("".join(chars))
+        results.append("".join(chars))
 
-    return result[0]
+    return results[0]
 
 # --------------------------------------------------
 # UI
@@ -113,13 +118,13 @@ input_method = st.radio(
 
 # Prevent invalid usage
 if model_choice == "Multi-Digit Sequence (CRNN)" and input_method == "Draw on Canvas":
-    st.warning("⚠️ CRNN works only with uploaded images. Please upload an image.")
+    st.warning("⚠️ Multi-digit CRNN works only with uploaded images.")
     st.stop()
 
 image = None
 
 # --------------------------------------------------
-# DRAW CANVAS (CNN ONLY)
+# CANVAS (CNN ONLY)
 # --------------------------------------------------
 if input_method == "Draw on Canvas":
     canvas = st_canvas(
@@ -163,6 +168,6 @@ if image is not None:
 
         else:
             img = preprocess_crnn(image)
-            pred = crnn_model.predict(img, verbose=0)
+            pred = predict_crnn(crnn_model, img)
             text = decode_crnn(pred)
             st.success(f"🧠 Predicted Number: **{text}**")
