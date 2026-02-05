@@ -36,7 +36,7 @@ def load_crnn_model():
         compile=False
     )
 
-    # Inference model (remove CTC Lambda)
+    # Build inference-only model (remove CTC Lambda)
     prediction_model = tf.keras.models.Model(
         inputs=training_model.input[0],
         outputs=training_model.get_layer("dense").output
@@ -50,12 +50,21 @@ crnn_model = load_crnn_model()
 # PREPROCESSING
 # --------------------------------------------------
 def preprocess_hdr(img):
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # Handle RGBA (canvas)
+    if img.shape[-1] == 4:
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)
+    else:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
     img = cv2.resize(img, (28, 28))
     img = img.astype("float32") / 255.0
     return img.reshape(1, 28, 28, 1)
 
 def preprocess_crnn(img):
+    # Convert RGBA → RGB
+    if img.shape[-1] == 4:
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+
     img = cv2.resize(img, (128, 32))
     img = img.astype("float32") / 255.0
     return img.reshape(1, 32, 128, 3)
@@ -65,7 +74,7 @@ def preprocess_crnn(img):
 # --------------------------------------------------
 def decode_crnn(pred):
     pred = np.argmax(pred, axis=-1)
-    results = []
+    text = []
     for seq in pred:
         prev = -1
         chars = []
@@ -73,8 +82,8 @@ def decode_crnn(pred):
             if p != prev and p != -1:
                 chars.append(str(p))
             prev = p
-        results.append("".join(chars))
-    return results[0]
+        text.append("".join(chars))
+    return text[0]
 
 # --------------------------------------------------
 # UI
