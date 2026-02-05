@@ -19,7 +19,7 @@ BLANK_TOKEN = 10  # CTC blank label
 # =========================================================
 @st.cache_resource
 def load_single_digit_model():
-    return tf.keras.models.load_model("mnist_cnn.h5")
+    return tf.keras.models.load_model("hdr_cnn.keras")
 
 @st.cache_resource
 def load_sequence_model():
