@@ -35,8 +35,7 @@ def load_single_digit_model():
 def load_sequence_model():
     return tf.keras.models.load_model(
         "crnn_svhn_sequence.keras",
-        compile=False,
-        safe_mode=False
+        compile=False
     )
 
 single_digit_model = load_single_digit_model()
