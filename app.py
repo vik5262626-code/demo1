@@ -7,15 +7,15 @@ from tensorflow.keras import backend as K
 from streamlit_drawable_canvas import st_canvas
 
 # --------------------------------------------------
-# STREAMLIT CONFIG
+# CONFIG
 # --------------------------------------------------
-st.set_page_config(page_title="Digit Recognition", layout="centered")
+st.set_page_config(page_title="Digit Recognition App", layout="centered")
 
 HDR_MODEL_PATH = "hdr_cnn.keras"
 CRNN_MODEL_PATH = "crnn_svhn_sequence.keras"
 
 # --------------------------------------------------
-# CTC LOSS (FOR MODEL LOADING ONLY)
+# CTC LOSS (ONLY FOR LOADING MODEL)
 # --------------------------------------------------
 def ctc_loss(args):
     y_pred, labels, input_length, label_length = args
@@ -30,18 +30,27 @@ def load_hdr_model():
 
 @st.cache_resource
 def load_crnn_model():
-    training_model = tf.keras.models.load_model(
+    model = tf.keras.models.load_model(
         CRNN_MODEL_PATH,
         custom_objects={"ctc_loss": ctc_loss},
         compile=False
     )
 
-    # Build inference-only model (remove CTC Lambda)
-    prediction_model = tf.keras.models.Model(
-        inputs=training_model.input[0],
-        outputs=training_model.get_layer("dense").output
+    # Extract last Dense (softmax) layer safely
+    softmax_output = None
+    for layer in model.layers:
+        if isinstance(layer, tf.keras.layers.Dense):
+            softmax_output = layer.output
+
+    if softmax_output is None:
+        raise RuntimeError("Dense softmax layer not found in CRNN model")
+
+    inference_model = tf.keras.models.Model(
+        inputs=model.input,
+        outputs=softmax_output
     )
-    return prediction_model
+
+    return inference_model
 
 hdr_model = load_hdr_model()
 crnn_model = load_crnn_model()
@@ -50,7 +59,6 @@ crnn_model = load_crnn_model()
 # PREPROCESSING
 # --------------------------------------------------
 def preprocess_hdr(img):
-    # Handle RGBA (canvas)
     if img.shape[-1] == 4:
         img = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)
     else:
@@ -61,29 +69,32 @@ def preprocess_hdr(img):
     return img.reshape(1, 28, 28, 1)
 
 def preprocess_crnn(img):
-    # Convert RGBA → RGB
     if img.shape[-1] == 4:
-        img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)
+    elif img.shape[-1] == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
     img = cv2.resize(img, (128, 32))
     img = img.astype("float32") / 255.0
-    return img.reshape(1, 32, 128, 3)
+    return img.reshape(1, 32, 128, 1)
 
 # --------------------------------------------------
-# CTC DECODER
+# CTC GREEDY DECODER
 # --------------------------------------------------
 def decode_crnn(pred):
     pred = np.argmax(pred, axis=-1)
-    text = []
+    result = []
+
     for seq in pred:
         prev = -1
         chars = []
         for p in seq:
-            if p != prev and p != -1:
+            if p != prev and p != -1 and p < 10:
                 chars.append(str(p))
             prev = p
-        text.append("".join(chars))
-    return text[0]
+        result.append("".join(chars))
+
+    return result[0]
 
 # --------------------------------------------------
 # UI
@@ -100,10 +111,15 @@ input_method = st.radio(
     ["Draw on Canvas", "Upload Image"]
 )
 
+# Prevent invalid usage
+if model_choice == "Multi-Digit Sequence (CRNN)" and input_method == "Draw on Canvas":
+    st.warning("⚠️ CRNN works only with uploaded images. Please upload an image.")
+    st.stop()
+
 image = None
 
 # --------------------------------------------------
-# DRAW CANVAS
+# DRAW CANVAS (CNN ONLY)
 # --------------------------------------------------
 if input_method == "Draw on Canvas":
     canvas = st_canvas(
@@ -136,7 +152,7 @@ else:
 # PREDICTION
 # --------------------------------------------------
 if image is not None:
-    st.image(image, caption="Input Image", width=200)
+    st.image(image, caption="Input Image", width=250)
 
     if st.button("Predict"):
         if model_choice == "Handwritten Digit (CNN)":
