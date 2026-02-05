@@ -23,7 +23,7 @@ def load_single_digit_model():
 
 @st.cache_resource
 def load_sequence_model():
-    return tf.keras.models.load_model("svhn_crnn_standard.h5")
+    return tf.keras.models.load_model("crnn_svhn_sequence.keras")
 
 single_digit_model = load_single_digit_model()
 sequence_model = load_sequence_model()
