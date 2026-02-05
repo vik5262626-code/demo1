@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import cv2
 import tensorflow as tf
 from PIL import Image, ImageOps
 from streamlit_drawable_canvas import st_canvas
@@ -10,9 +9,10 @@ import matplotlib.pyplot as plt
 # =========================================================
 # CONFIG
 # =========================================================
-st.set_page_config("Digit Recognition", layout="centered")
+st.set_page_config(page_title="Digit Recognition", layout="centered")
+
 CONF_THRESHOLD = 0.75
-BLANK_TOKEN = 10  # For CTC
+BLANK_TOKEN = 10  # CTC blank label
 
 # =========================================================
 # LOAD MODELS
@@ -65,11 +65,11 @@ def ctc_decode(preds):
     return "".join(decoded), decoded_conf
 
 # =========================================================
-# CONFIDENCE VISUALIZATION
+# VISUALIZATIONS
 # =========================================================
 def plot_digit_confidence(preds):
     df = pd.DataFrame({
-        "Digit": list(range(10)),
+        "Digit": range(10),
         "Confidence": preds[0]
     })
     st.bar_chart(df.set_index("Digit"))
@@ -83,7 +83,7 @@ def plot_sequence_confidence(conf):
     st.info(f"Average Confidence: **{np.mean(conf):.2f}**")
 
 # =========================================================
-# GRAD-CAM
+# GRAD-CAM (no OpenCV)
 # =========================================================
 def gradcam(model, img, layer_name="conv2d"):
     grad_model = tf.keras.models.Model(
@@ -97,12 +97,17 @@ def gradcam(model, img, layer_name="conv2d"):
 
     grads = tape.gradient(loss, conv_out)
     pooled = tf.reduce_mean(grads, axis=(0, 1, 2))
-    heatmap = tf.reduce_sum(tf.multiply(pooled, conv_out), axis=-1)[0]
+    heatmap = tf.reduce_sum(pooled * conv_out, axis=-1)[0]
     heatmap = np.maximum(heatmap, 0)
-    return heatmap / np.max(heatmap)
+    heatmap /= np.max(heatmap) + 1e-8
+
+    heatmap = Image.fromarray((heatmap * 255).astype(np.uint8))
+    heatmap = heatmap.resize((28, 28))
+
+    return np.array(heatmap) / 255.0
 
 def show_heatmap(img, heatmap):
-    heatmap = cv2.resize(heatmap, (28, 28))
+    plt.figure(figsize=(3, 3))
     plt.imshow(img[0, :, :, 0], cmap="gray")
     plt.imshow(heatmap, cmap="jet", alpha=0.5)
     plt.axis("off")
@@ -194,7 +199,7 @@ else:
             st.success(f"Predicted Sequence: **{text}**")
             plot_sequence_confidence(conf)
 
-            if np.mean(conf) < CONF_THRESHOLD:
+            if conf and np.mean(conf) < CONF_THRESHOLD:
                 st.warning("⚠️ Low confidence sequence")
 
             st.table(pd.DataFrame({
