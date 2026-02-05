@@ -1,0 +1,8 @@
+streamlit
+streamlit-drawable-canvas
+numpy
+pandas
+opencv-python
+tensorflow
+Pillow
+matplotlib
