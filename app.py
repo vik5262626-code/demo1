@@ -3,7 +3,6 @@ import numpy as np
 import cv2
 from PIL import Image
 import tensorflow as tf
-from tensorflow import keras
 from tensorflow.keras import backend as K
 from streamlit_drawable_canvas import st_canvas
 
@@ -16,9 +15,8 @@ HDR_MODEL_PATH = "hdr_cnn.keras"
 CRNN_MODEL_PATH = "crnn_svhn_sequence.keras"
 
 # --------------------------------------------------
-# CTC LOSS (REQUIRED FOR LOADING MODEL)
+# CTC LOSS (FOR MODEL LOADING ONLY)
 # --------------------------------------------------
-@keras.saving.register_keras_serializable()
 def ctc_loss(args):
     y_pred, labels, input_length, label_length = args
     return K.ctc_batch_cost(labels, y_pred, input_length, label_length)
@@ -31,7 +29,7 @@ def load_hdr_model():
     return tf.keras.models.load_model(HDR_MODEL_PATH, compile=False)
 
 @st.cache_resource
-def load_crnn_models():
+def load_crnn_model():
     training_model = tf.keras.models.load_model(
         CRNN_MODEL_PATH,
         custom_objects={"ctc_loss": ctc_loss},
@@ -46,7 +44,7 @@ def load_crnn_models():
     return prediction_model
 
 hdr_model = load_hdr_model()
-crnn_model = load_crnn_models()
+crnn_model = load_crnn_model()
 
 # --------------------------------------------------
 # PREPROCESSING
@@ -67,7 +65,7 @@ def preprocess_crnn(img):
 # --------------------------------------------------
 def decode_crnn(pred):
     pred = np.argmax(pred, axis=-1)
-    text = []
+    results = []
     for seq in pred:
         prev = -1
         chars = []
@@ -75,8 +73,8 @@ def decode_crnn(pred):
             if p != prev and p != -1:
                 chars.append(str(p))
             prev = p
-        text.append("".join(chars))
-    return text[0]
+        results.append("".join(chars))
+    return results[0]
 
 # --------------------------------------------------
 # UI
